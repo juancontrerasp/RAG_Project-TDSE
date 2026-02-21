@@ -1,13 +1,13 @@
 """
 RAG (Retrieval-Augmented Generation) Implementation
-Using LangChain + OpenAI + Pinecone
+Using LangChain + Google Gemini + Pinecone
 """
 
 import os
 from dotenv import load_dotenv
 
 # LangChain imports
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_pinecone import PineconeVectorStore
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -23,30 +23,45 @@ load_dotenv()
 # ──────────────────────────────────────────────
 # 1. Configuration
 # ──────────────────────────────────────────────
-OPENAI_API_KEY  = os.environ["OPENAI_API_KEY"]
+GOOGLE_API_KEY   = os.environ["GOOGLE_API_KEY"]
 PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
-INDEX_NAME      = "rag-demo-index"
-EMBEDDING_MODEL = "text-embedding-3-small"
-LLM_MODEL       = "gpt-4o-mini"
+INDEX_NAME       = "rag-demo-index"
+
+# Gemini embedding model outputs 768-dim vectors
+EMBEDDING_MODEL  = "gemini-embedding-001"
+
+# Free Gemini chat model
+LLM_MODEL        = "gemini-1.5-flash"
 
 
 # ──────────────────────────────────────────────
 # 2. Initialize clients
 # ──────────────────────────────────────────────
 def get_embeddings():
-    """Return an OpenAI embeddings model."""
-    return OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=OPENAI_API_KEY)
+    """Return a Gemini embeddings model."""
+    return GoogleGenerativeAIEmbeddings(
+        model=EMBEDDING_MODEL,
+        google_api_key=GOOGLE_API_KEY,
+    )
 
 
 def get_llm():
-    """Return a ChatOpenAI language model."""
-    return ChatOpenAI(model=LLM_MODEL, temperature=0, api_key=OPENAI_API_KEY)
+    """Return a Gemini chat model."""
+    return ChatGoogleGenerativeAI(
+        model=LLM_MODEL,
+        temperature=0,
+        google_api_key=GOOGLE_API_KEY,
+    )
 
 
 def get_or_create_pinecone_index():
     """
     Connect to Pinecone and create the index if it does not exist yet.
     Returns the index name ready for use with PineconeVectorStore.
+
+    IMPORTANT: dimension=768 matches Gemini's embedding-001 output size.
+    If you previously created an index with dimension=1536 (OpenAI),
+    delete it in the Pinecone dashboard first, then re-run.
     """
     pc = Pinecone(api_key=PINECONE_API_KEY)
 
@@ -55,7 +70,7 @@ def get_or_create_pinecone_index():
         print(f"Creating Pinecone index '{INDEX_NAME}' ...")
         pc.create_index(
             name=INDEX_NAME,
-            dimension=1536,          # text-embedding-3-small outputs 1536-dim vectors
+            dimension=768,          # Gemini embedding-001 outputs 768-dim vectors
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1"),
         )
@@ -71,7 +86,7 @@ def get_or_create_pinecone_index():
 # ──────────────────────────────────────────────
 def ingest_documents(urls: list[str]) -> PineconeVectorStore:
     """
-    Load web pages, split them into chunks, embed them with OpenAI,
+    Load web pages, split them into chunks, embed them with Gemini,
     and upsert them into Pinecone.
 
     Args:
@@ -89,8 +104,8 @@ def ingest_documents(urls: list[str]) -> PineconeVectorStore:
     chunks = splitter.split_documents(docs)
     print(f"   Split into {len(chunks)} chunk(s).")
 
-    embeddings  = get_embeddings()
-    index_name  = get_or_create_pinecone_index()
+    embeddings = get_embeddings()
+    index_name = get_or_create_pinecone_index()
 
     print("⬆️  Upserting chunks into Pinecone ...")
     vector_store = PineconeVectorStore.from_documents(
@@ -110,10 +125,10 @@ def build_rag_chain(vector_store: PineconeVectorStore):
     Wire together the retriever, prompt, and LLM into a RAG chain.
 
     The chain:
-      1. Converts the user question into an embedding.
+      1. Converts the user question into a Gemini embedding.
       2. Retrieves the top-k most similar chunks from Pinecone.
       3. Stuffs those chunks into the prompt context.
-      4. Asks the LLM to answer using only that context.
+      4. Asks Gemini to answer using only that context.
 
     Args:
         vector_store: An initialised PineconeVectorStore.
@@ -135,9 +150,9 @@ def build_rag_chain(vector_store: PineconeVectorStore):
         ("human", "{input}"),
     ])
 
-    llm           = get_llm()
-    doc_chain     = create_stuff_documents_chain(llm, prompt)
-    rag_chain     = create_retrieval_chain(retriever, doc_chain)
+    llm       = get_llm()
+    doc_chain = create_stuff_documents_chain(llm, prompt)
+    rag_chain = create_retrieval_chain(retriever, doc_chain)
 
     return rag_chain
 
