@@ -28,10 +28,10 @@ PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
 INDEX_NAME       = "rag-demo-index"
 
 # Gemini embedding model outputs 768-dim vectors
-EMBEDDING_MODEL  = "gemini-embedding-001"
+EMBEDDING_MODEL  = "models/gemini-embedding-001"
 
 # Free Gemini chat model
-LLM_MODEL        = "gemini-1.5-flash"
+LLM_MODEL        = "gemini-2.5-flash"
 
 
 # ──────────────────────────────────────────────
@@ -70,7 +70,7 @@ def get_or_create_pinecone_index():
         print(f"Creating Pinecone index '{INDEX_NAME}' ...")
         pc.create_index(
             name=INDEX_NAME,
-            dimension=768,          # Gemini embedding-001 outputs 768-dim vectors
+            dimension=3072,   
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1"),
         )
